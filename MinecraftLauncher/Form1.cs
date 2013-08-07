@@ -12,6 +12,7 @@ using System.Management;
 using System.Security.Cryptography;
 using System.IO;
 using System.Text.RegularExpressions;
+using System.Threading;
 
 
 
@@ -37,16 +38,55 @@ namespace MinecraftLauncher
 {
 
     /////////////////////////////////////
-    // Start - File Usage
+    // Start - Minecraft Launcher
         public partial class Form1 : Form
         {
             /////////////////////////////////////
             // Start - Settings and Parameters
                 string appData = Environment.GetEnvironmentVariable("APPDATA");
                 Form2 frm2 = new Form2();
+                public bool stopAutoLogin = false;
                 public string mcName = "";
                 public string mcSession = "";
+                public bool userLoggedIn = false;
                 public string usersFile = @"./AEUsers";
+            // End
+            /////////////////////////////////////
+
+            private Object threadLock = new Object();
+
+            /////////////////////////////////////
+            // Start - The Link between threads and Error text Form Controls
+                delegate void SetTextDelegate(string value);
+
+                public void SetErrorText(string value)
+                {
+                    if (InvokeRequired)
+                        Invoke(new SetTextDelegate(SetErrorText), value);
+                    else
+                        textError.Text = value;
+                }
+                public void SetButtonText(string value)
+                {
+                    if (InvokeRequired)
+                        Invoke(new SetTextDelegate(SetButtonText), value);
+                    else
+                        startButton.Text = value;
+                }
+                public void setDebugSession(string value)
+                {
+                    if (InvokeRequired)
+                        Invoke(new SetTextDelegate(setDebugSession), value);
+                    else
+                        frm2.debugTextSession = value;
+                }
+                public void setDebugName(string value)
+                {
+                    if (InvokeRequired)
+                        Invoke(new SetTextDelegate(setDebugName), value);
+                    else
+                        frm2.debugTextUsername = value;
+                }
             // End
             /////////////////////////////////////
 
@@ -64,7 +104,7 @@ namespace MinecraftLauncher
             // Start - File Usage
                 void WriteLoginToFile()
                 {
-                    string CombinedString = tbUsername.Text + ":" + tbPassword.Text;
+                    string CombinedString = tbUsername.Text + ":" + tbPassword.Text + ":" + checkAutoLogin.Checked;
                     string EncryptedString = StringCipher.Encrypt(CombinedString, StringCipher.uniqueMachineId());
                     System.IO.File.WriteAllText(usersFile, EncryptedString);
                 }
@@ -73,9 +113,10 @@ namespace MinecraftLauncher
                 {
                     string EncryptedString = System.IO.File.ReadAllText(usersFile);
                     string DecryptedString = StringCipher.Decrypt(EncryptedString, StringCipher.uniqueMachineId());
-                    string[] StringArray = DecryptedString.Split(new char[] { ':' }, 2);
+                    string[] StringArray = DecryptedString.Split(new char[] { ':' }, 3);
                     tbUsername.Text = StringArray[0];
                     tbPassword.Text = StringArray[1];
+                    checkAutoLogin.Checked = Convert.ToBoolean(StringArray[2]);
                 }
             // End
             /////////////////////////////////////
@@ -96,8 +137,8 @@ namespace MinecraftLauncher
                     }
                     if (checkAutoLogin.Checked == true)
                     {
-                        // This Needs a five second time that can be interrpted. Before enableing the checkbox.
-                        startButton_Click(sender, e);
+                        Thread a = new Thread(autoLogin);          // Kick off a new thread
+                        a.Start();
                     }
                 }
             // End
@@ -126,82 +167,152 @@ namespace MinecraftLauncher
             // End
             /////////////////////////////////////
 
-            private bool webLogin()
+            delegate void SetContDelegate(bool value);
+
+            private void enableControls(bool value)
             {
-                textError.Text = "Connecting..."; //Why doesnt this show up? - If there is a delay?
-                string userName = tbUsername.Text;
-                string userPass = tbPassword.Text;
-                bool loginStatus = false;
+                if (InvokeRequired)
+                    Invoke(new SetContDelegate(enableControls), value);
+                else
+                    menuToolStripMenuItem.Enabled = value;
+                tbUsername.Enabled = value;
+                tbPassword.Enabled = value;
+                checkAutoLogin.Enabled = value;
+                checkLogin.Enabled = value;
+            }
+            private void startControl(bool value)
+            {
+                if (InvokeRequired)
+                    Invoke(new SetContDelegate(startControl), value);
+                else
+                startButton.Enabled = value;
+            }
 
-                /////////////////////////////////////
-                // Start - Create URL
-                  //  string urlData = "?user=" + userName + "&password=" + userPass + "&version=13"; //Place username and password in to url before using it.
-                // End
-                /////////////////////////////////////
-
-                /////////////////////////////////////
-                // Start - Web Code, Unlearned, But it Works
-                // Gets Session Id and other strings from Minecraft
-                    string mcURLData = "";
-                    using (WebClient client = new WebClient()) // Get Data from Minecraft with username and password
+            private void autoLogin()
+            {
+                enableControls(false);
+                SetButtonText("Cancel");
+                int timeSeconds = 5;
+                int c = 0;
+                while (true)
+                {
+                    SetErrorText("Auto Login: " + c);
+                    System.Threading.Thread.Sleep(1000);
+                    if (stopAutoLogin == true)
                     {
-                        try
-                        {
-                            System.Collections.Specialized.NameValueCollection urlData = new System.Collections.Specialized.NameValueCollection();
-                            urlData.Add("user", userName);
-                            urlData.Add("password", userPass);
-                            urlData.Add("version", "13");
-                            byte[] responsebytes = client.UploadValues("https://login.minecraft.net", "POST", urlData);
-                            mcURLData = Encoding.UTF8.GetString(responsebytes);
-                        }
-                        catch
-                        {
-                            textError.Text = "Can't connect to login.minecraft.net.";
-                        }
+                        enableControls(true);
+                        SetErrorText("Auto Login Canceled");
+                        SetButtonText("Login");
+                        break;
                     }
-                // End
-                /////////////////////////////////////
-
-                /////////////////////////////////////
-                // Start - Check Minecraft Session Status
-                    if (mcURLData.Contains(":"))
+                    if (c == timeSeconds & stopAutoLogin != true)
                     {
-                        string[] mcLoginData = mcURLData.Split(':');
-                        mcName = mcLoginData[2];
-                        mcSession = mcLoginData[3];
-                        frm2.debugTextUsername = mcSession;
-                        frm2.debugTextSession = mcName;
-                        textError.Text = "Successful Login";
-                        loginStatus = true;
-                        if (checkLogin.Checked == true)
-                        {
-                            WriteLoginToFile();
-                        }
-                        else if (File.Exists(usersFile))
-                        {
-                            File.Delete(usersFile);
-                        }
+                        startControl(false);
+                        SetButtonText("Login");
+                        webLogin();
+                        startControl(true);
+                        this.Invoke(new Action(() => { startButton.PerformClick(); }));
+                        break;
                     }
                     else
                     {
-                        textError.Text = mcURLData;
+                        c++;
                     }
-                // End
-                /////////////////////////////////////
-
-                    return loginStatus;
+                }
             }
+
+            /////////////////////////////////////
+            // Start - Get Login Session from Minecraft.
+                private void webLogin()
+                {
+                    if (Monitor.TryEnter(threadLock))
+                    {
+                    SetErrorText("Connecting...");
+                    string userName = tbUsername.Text;
+                    string userPass = tbPassword.Text;
+
+                    /////////////////////////////////////
+                    // Start - Web Code, Unlearned, But it Works
+                    // Gets Session Id and other strings from Minecraft
+                        string mcURLData = "";
+                        using (WebClient client = new WebClient()) // Get Data from Minecraft with username and password
+                        {
+                            try
+                            {
+                                System.Collections.Specialized.NameValueCollection urlData = new System.Collections.Specialized.NameValueCollection();
+                                urlData.Add("user", userName);
+                                urlData.Add("password", userPass);
+                                urlData.Add("version", "13");
+                                byte[] responsebytes = client.UploadValues("https://login.minecraft.net", "POST", urlData);
+                                mcURLData = Encoding.UTF8.GetString(responsebytes);
+                            }
+                            catch
+                            {
+                                SetErrorText("Can't connect to login.minecraft.net.");
+                            }
+                        }
+                    // End
+                    /////////////////////////////////////
+
+                    /////////////////////////////////////
+                    // Start - Check Minecraft Session Status
+                        if (mcURLData.Contains(":"))
+                        {
+                            string[] mcLoginData = mcURLData.Split(':');
+                            mcName = mcLoginData[2];
+                            mcSession = mcLoginData[3];
+                            //Possible Error
+                            setDebugSession(mcSession);
+                            setDebugName(mcName);
+                            SetErrorText("Successful Login");
+                            SetButtonText("Start");
+                            userLoggedIn = true;
+                            if (checkLogin.Checked == true)
+                            {
+                                WriteLoginToFile();
+                            }
+                            else if (File.Exists(usersFile))
+                            {
+                                File.Delete(usersFile);
+                            }
+                        }
+                        else
+                        {
+                            SetErrorText(mcURLData);
+                        }
+                    // End
+                    /////////////////////////////////////
+                    }
+                    else
+                    {
+                        SetErrorText("CONNECTING!!?.. patience, :)");
+                    }
+                }
+            // End
+            /////////////////////////////////////
 
             /////////////////////////////////////
             // Start - Start Button Code
                 private void startButton_Click(object sender, EventArgs e)
                 {
-                    if (webLogin())
+                    if (startButton.Text == "Cancel")
                     {
-                        if (frm2.Visible != true || frm2.debugCheckMinecraft == true)
+                        stopAutoLogin = true;
+                    }
+                    else
+                    {
+                        if (userLoggedIn)
                         {
-                            Process.Start("javaw", "-Xms512m -Xmx1024m -cp " + appData + @"\.minecraft\bin\* -Djava.library.path=" + appData + @"\.minecraft\bin\natives net.minecraft.client.Minecraft " + mcName + " " + mcSession);
-                            this.Close();
+                            if (frm2.Visible != true || frm2.debugCheckMinecraft == false)
+                            {
+                                Process.Start("javaw", "-Xms512m -Xmx1024m -cp " + appData + @"\.minecraft\bin\* -Djava.library.path=" + appData + @"\.minecraft\bin\natives net.minecraft.client.Minecraft " + mcName + " " + mcSession);
+                                this.Close();
+                            }
+                        }
+                        else
+                        {
+                            Thread t = new Thread(webLogin);          // Kick off a new thread
+                            t.Start();
                         }
                     }
                 }
@@ -268,7 +379,7 @@ namespace MinecraftLauncher
                 // This size of the IV (in bytes) must = (keysize / 8).  Default keysize is 256, so the IV must be
                 // 32 bytes long.  Using a 16 character string here gives us 32 bytes when converted to a byte array.
                 private const string initVector = "" + "8dfn27c6vhd81j9s"; // Change the "" as needed. Uses only up to 16 characters.
-                private const int vectorInt = 16; // Max Character length of string.
+                private const int vectorInt = 16; // Max Character length of string. Don,t change unless you know what your doing.
 
                 // This constant is used to determine the keysize of the encryption algorithm.
                 private const int keysize = 256;
