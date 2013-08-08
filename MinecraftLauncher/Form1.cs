@@ -53,10 +53,32 @@ namespace MinecraftLauncher
             // End
             /////////////////////////////////////
 
-            private Object threadLock = new Object();
+            /////////////////////////////////////
+            // Start - Required Code
+                public Form1()
+                {
+                    InitializeComponent();
+                }
+
+                private void Form1_Load(object sender, EventArgs e)
+                {
+                    if (File.Exists(usersFile))
+                    {
+                        checkLogin.Checked = true;
+                        ReadLoginFromFile();
+                    }
+                    if (checkAutoLogin.Checked == true)
+                    {
+                        Thread a = new Thread(autoLogin);          // Kick off a new thread
+                        a.IsBackground = true;
+                        a.Start();
+                    }
+                }
+            // End
+            /////////////////////////////////////
 
             /////////////////////////////////////
-            // Start - The Link between threads and Error text Form Controls
+            // Start - The Links between threads and Form Controls
                 delegate void SetTextDelegate(string value);
 
                 public void SetErrorText(string value)
@@ -90,62 +112,43 @@ namespace MinecraftLauncher
             // End
             /////////////////////////////////////
 
-            private void exitToolStripMenuItem_Click(object sender, EventArgs e)
-            {
-                this.Close();
-            }
-
-            private void debugToolStripMenuItem_Click(object sender, EventArgs e)
-            {
-                frm2.Show();
-            }
-
             /////////////////////////////////////
-            // Start - File Usage
-                void WriteLoginToFile()
+            // Start - Form Controls
+                private void startButton_Click(object sender, EventArgs e)
                 {
-                    string CombinedString = tbUsername.Text + ":" + tbPassword.Text + ":" + checkAutoLogin.Checked;
-                    string EncryptedString = StringCipher.Encrypt(CombinedString, StringCipher.uniqueMachineId());
-                    System.IO.File.WriteAllText(usersFile, EncryptedString);
-                }
 
-                void ReadLoginFromFile()
-                {
-                    string EncryptedString = System.IO.File.ReadAllText(usersFile);
-                    string DecryptedString = StringCipher.Decrypt(EncryptedString, StringCipher.uniqueMachineId());
-                    string[] StringArray = DecryptedString.Split(new char[] { ':' }, 3);
-                    tbUsername.Text = StringArray[0];
-                    tbPassword.Text = StringArray[1];
-                    checkAutoLogin.Checked = Convert.ToBoolean(StringArray[2]);
-                }
-            // End
-            /////////////////////////////////////
-
-            /////////////////////////////////////
-            // Start - Required Code
-                public Form1()
-                {
-                    InitializeComponent();
-                }
-
-                private void Form1_Load(object sender, EventArgs e)
-                {
-                    if (File.Exists(usersFile))
+                    if (startButton.Text == "Cancel")
                     {
-                        checkLogin.Checked = true;
-                        ReadLoginFromFile();
+                        stopAutoLogin = true;
                     }
-                    if (checkAutoLogin.Checked == true)
+                    else
                     {
-                        Thread a = new Thread(autoLogin);          // Kick off a new thread
-                        a.Start();
+                        if (userLoggedIn)
+                        {
+                            if (frm2.Visible != true || frm2.debugCheckMinecraft == false)
+                            {
+                                Process.Start("javaw", "-Xms512m -Xmx1024m -cp " + appData + @"\.minecraft\bin\* -Djava.library.path=" + appData + @"\.minecraft\bin\natives net.minecraft.client.Minecraft " + mcName + " " + mcSession);
+                                this.Close();
+                            }
+                        }
+                        else
+                        {
+                            Thread t = new Thread(webLogin);          // Kick off a new thread
+                            t.IsBackground = true;
+                            t.Start();
+                        }
                     }
                 }
-            // End
-            /////////////////////////////////////
 
-            /////////////////////////////////////
-            // Start - Enter Button Tab and Login
+                private void exitToolStripMenuItem_Click(object sender, EventArgs e)
+                {
+                    this.Close();
+                }
+
+                private void debugToolStripMenuItem_Click(object sender, EventArgs e)
+                {
+                    frm2.Show();
+                }
                 private void tbUsername_KeyDown(object sender, KeyEventArgs e)
                 {
                     if (e.KeyCode == Keys.Enter)
@@ -164,29 +167,60 @@ namespace MinecraftLauncher
                         startButton_Click(sender, e);
                     }
                 }
+
+                //Threading Freindly Methods
+                delegate void SetContDelegate(bool value);
+
+                private void enableControls(bool value)
+                {
+                    if (InvokeRequired)
+                        Invoke(new SetContDelegate(enableControls), value);
+                    else
+                        menuToolStripMenuItem.Enabled = value;
+                    tbUsername.Enabled = value;
+                    tbPassword.Enabled = value;
+                    checkAutoLogin.Enabled = value;
+                    checkLogin.Enabled = value;
+                }
+                private void startControl(bool value)
+                {
+                    if (InvokeRequired)
+                        Invoke(new SetContDelegate(startControl), value);
+                    else
+                        startButton.Enabled = value;
+                }
             // End
             /////////////////////////////////////
 
-            delegate void SetContDelegate(bool value);
+            /////////////////////////////////////
+            // Start - File Usage
+                void WriteLoginToFile()
+                {
+                    string CombinedString = tbUsername.Text + ":" + tbPassword.Text + ":" + checkAutoLogin.Checked;
+                    string EncryptedString = StringCipher.Encrypt(CombinedString, StringCipher.uniqueMachineId());
+                    System.IO.File.WriteAllText(usersFile, EncryptedString);
+                }
 
-            private void enableControls(bool value)
-            {
-                if (InvokeRequired)
-                    Invoke(new SetContDelegate(enableControls), value);
-                else
-                    menuToolStripMenuItem.Enabled = value;
-                tbUsername.Enabled = value;
-                tbPassword.Enabled = value;
-                checkAutoLogin.Enabled = value;
-                checkLogin.Enabled = value;
-            }
-            private void startControl(bool value)
-            {
-                if (InvokeRequired)
-                    Invoke(new SetContDelegate(startControl), value);
-                else
-                startButton.Enabled = value;
-            }
+                void ReadLoginFromFile()
+                {
+                    string EncryptedString = System.IO.File.ReadAllText(usersFile);
+                    string DecryptedString = StringCipher.Decrypt(EncryptedString, StringCipher.uniqueMachineId());
+                    string[] StringArray = DecryptedString.Split(new char[] { ':' }, 3);
+                    tbUsername.Text = StringArray[0];
+                    tbPassword.Text = StringArray[1];
+                    try
+                    {
+                        checkAutoLogin.Checked = Convert.ToBoolean(StringArray[2]);
+                    }
+                    catch
+                    {
+                        SetErrorText("Account Data, Refreshed.");
+                        WriteLoginToFile();
+                    }
+                }
+            // End
+            /////////////////////////////////////
+
 
             private void autoLogin()
             {
@@ -196,7 +230,7 @@ namespace MinecraftLauncher
                 int c = 0;
                 while (true)
                 {
-                    SetErrorText("Auto Login: " + c);
+                    SetErrorText("Auto Login: " + timeSeconds);
                     System.Threading.Thread.Sleep(1000);
                     if (stopAutoLogin == true)
                     {
@@ -205,7 +239,7 @@ namespace MinecraftLauncher
                         SetButtonText("Login");
                         break;
                     }
-                    if (c == timeSeconds & stopAutoLogin != true)
+                    if (c >= timeSeconds & stopAutoLogin != true)
                     {
                         startControl(false);
                         SetButtonText("Login");
@@ -216,25 +250,32 @@ namespace MinecraftLauncher
                     }
                     else
                     {
-                        c++;
+                        timeSeconds--;
                     }
                 }
             }
 
+
             /////////////////////////////////////
             // Start - Get Login Session from Minecraft.
+                private Object threadLock = new Object();
+
                 private void webLogin()
                 {
-                    if (Monitor.TryEnter(threadLock))
+                    if (!Monitor.TryEnter(threadLock)) //Lock to only one Thread at a time.
+                    {
+                        SetErrorText("Error:CONNECTING!!?.. patience, :)");
+                        return;
+                    }
+                    try
                     {
                     SetErrorText("Connecting...");
                     string userName = tbUsername.Text;
                     string userPass = tbPassword.Text;
-
                     /////////////////////////////////////
                     // Start - Web Code, Unlearned, But it Works
                     // Gets Session Id and other strings from Minecraft
-                        string mcURLData = "";
+                        string mcURLData = "WebClient Code Error";
                         using (WebClient client = new WebClient()) // Get Data from Minecraft with username and password
                         {
                             try
@@ -248,7 +289,14 @@ namespace MinecraftLauncher
                             }
                             catch
                             {
-                                SetErrorText("Can't connect to login.minecraft.net.");
+                                if (!System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable())
+                                {
+                                    mcURLData = "Internet Disconnected.";
+                                }
+                                else
+                                {
+                                    mcURLData = "Can't connect to login.minecraft.net.";
+                                }
                             }
                         }
                     // End
@@ -283,37 +331,9 @@ namespace MinecraftLauncher
                     // End
                     /////////////////////////////////////
                     }
-                    else
+                    finally
                     {
-                        SetErrorText("CONNECTING!!?.. patience, :)");
-                    }
-                }
-            // End
-            /////////////////////////////////////
-
-            /////////////////////////////////////
-            // Start - Start Button Code
-                private void startButton_Click(object sender, EventArgs e)
-                {
-                    if (startButton.Text == "Cancel")
-                    {
-                        stopAutoLogin = true;
-                    }
-                    else
-                    {
-                        if (userLoggedIn)
-                        {
-                            if (frm2.Visible != true || frm2.debugCheckMinecraft == false)
-                            {
-                                Process.Start("javaw", "-Xms512m -Xmx1024m -cp " + appData + @"\.minecraft\bin\* -Djava.library.path=" + appData + @"\.minecraft\bin\natives net.minecraft.client.Minecraft " + mcName + " " + mcSession);
-                                this.Close();
-                            }
-                        }
-                        else
-                        {
-                            Thread t = new Thread(webLogin);          // Kick off a new thread
-                            t.Start();
-                        }
+                        Monitor.Exit(threadLock); //Unlock for use of other threads.
                     }
                 }
             // End
@@ -372,6 +392,13 @@ namespace MinecraftLauncher
                 }
             // End
             /////////////////////////////////////
+
+            ////////////////////
+            ////////////////////////////////////////
+            // Section below is code that was extracted from other online sources and changed to work here.
+            // The below code is slightly unknown.
+            ////////////////////////////////////////
+            ////////////////////
 
             /////////////////////////////////////
             // Start - Encrypt Code
